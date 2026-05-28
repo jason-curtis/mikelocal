@@ -1,0 +1,54 @@
+name: Build & Attest Windows Installer
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  attestations: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install frontend dependencies
+        run: npm --prefix frontend ci
+
+      - name: Install backend dependencies
+        run: npm --prefix backend ci
+
+      - name: Build Windows NSIS installer
+        run: npm run dist -- --publish never
+
+      - name: Find installer exe
+        id: find-exe
+        shell: bash
+        run: |
+          EXE=$(find dist -name '*.exe' -type f | head -1)
+          echo "exe_path=$EXE" >> "$GITHUB_OUTPUT"
+          echo "exe_name=$(basename "$EXE")" >> "$GITHUB_OUTPUT"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ steps.find-exe.outputs.exe_path }}
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: ${{ steps.find-exe.outputs.exe_path }}
